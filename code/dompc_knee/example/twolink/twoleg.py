@@ -14,7 +14,7 @@ import do_mpc
 """
 
 # set number of steps
-num_steps = 380
+num_steps = 300
 delta_t = 0.01
 
 model_type = 'continuous' # either 'discrete' or 'continuous'
@@ -33,12 +33,6 @@ dx2 = model.set_variable(var_type='_x', var_name='dx2', shape=(1,1))
 # control / inputs
 tau = model.set_variable(var_type='_u', var_name='tau', shape=(1,1))
 
-
-
-#print('x1={}, with x1.shape={}'.format(x1, x1.shape))
-#print('x2={}, with x2.shape={}'.format(x2, x1.shape))
-#print('dx1={}, with dx1.shape={}'.format(dx1, dx1.shape))
-#print('dx2={}, with dx2.shape={}'.format(dx2, dx2.shape))
 
 # set params
 a = 0.5
@@ -78,11 +72,15 @@ model.setup()
 mpc = do_mpc.controller.MPC(model)
 
 setup_mpc = {
-    'n_horizon': 70,
+    'n_horizon': 300,
     't_step': delta_t,
     'n_robust': 1,
-    'store_full_solution': True,
-    #'supress_ipopt_output': True
+    'state_discretization': 'collocation',
+    'collocation_type': 'radau',
+    'collocation_deg': 3,
+    'collocation_ni': 1,
+    'store_full_solution': False,
+    'supress_ipopt_output': True
 }
 mpc.settings.supress_ipopt_output()
 mpc.set_param(**setup_mpc)
@@ -90,8 +88,8 @@ mpc.set_param(**setup_mpc)
 
 
 # obj function
-mterm = (x1-0.19)**2 + (x2+0.3)**2
-lterm = (x1-0.19)**1 + (x2+0.3)**2
+mterm = (x1-0.19602)**2 + (x2+0.29602)**2 + 0.2*(dx1+2.10662)**2 + 0.2*(dx2+1.4195)**2
+lterm = (x1-0.19602)**2 + (x2+0.29602)**2 + 0.2*(dx1+2.10662)**2 + 0.2*(dx2+1.4195)**2
 mpc.set_objective(mterm=mterm, lterm=lterm)
 
 # set r term ??
@@ -100,18 +98,15 @@ mpc.set_rterm(
 )
 
 # lower and upper bounds on states
-mpc.bounds['lower','_x','x1'] = -1.5708 # -90 deg
-mpc.bounds['lower','_x','x2'] = -1.5708 # -90 deg
-mpc.bounds['upper','_x','x1'] = 1.5708 # +90 deg
-mpc.bounds['upper','_x','x2'] = 1.5708 # +90 deg
+mpc.bounds['lower','_x','x1'] = -1
+mpc.bounds['lower','_x','x2'] = -1
+mpc.bounds['upper','_x','x1'] = 1
+mpc.bounds['upper','_x','x2'] = 1
 
 # lower and upper bounds on inputs (tau/desired pos?)
-#mpc.bounds['lower','_u','tau'] = -3
-#mpc.bounds['upper','_u','tau'] = 3
+mpc.bounds['lower','_u','tau'] = -20
+mpc.bounds['upper','_u','tau'] = 20
 
-# should maybe add scaling to adjust for difference in magnitude from diferent states (optinal/future)
-
-# set uncertain parameters (none for now)
 
 mpc.setup()
 
@@ -132,108 +127,12 @@ simulator.setup()
 """
 
 # initial guess
-x0 = np.array([-0.3, 0.2038, -0.41215, -1.05]).reshape(-1,1)
+x0 = np.array([-0.3, 0.2038, -0.41215, -1.0501]).reshape(-1,1)
 simulator.x0 = x0
 mpc.x0 = x0
 mpc.set_initial_guess()
 
-#print(mpc.x0['x1'])
-#print(mpc.x0['x2'])
-#print(mpc.x0['dx1'])
-#print(mpc.x0['dx2'])
 
-# graphics
-import matplotlib.pyplot as plt
-import matplotlib as mpl
-# Customizing Matplotlib:
-mpl.rcParams['font.size'] = 18
-mpl.rcParams['lines.linewidth'] = 3
-mpl.rcParams['axes.grid'] = True
-
-mpc_graphics = do_mpc.graphics.Graphics(mpc.data)
-sim_graphics = do_mpc.graphics.Graphics(simulator.data)
-
-
-# We just want to create the plot and not show it right now. This "inline magic" supresses the output.
-fig, ax = plt.subplots(2, sharex=True, figsize=(16,9))
-fig.align_ylabels()
-
-for g in [sim_graphics, mpc_graphics]:
-    # Plot the angle positions (phi_1, phi_2, phi_2) on the first axis:
-    g.add_line(var_type='_x', var_name='x1', axis=ax[0])
-    g.add_line(var_type='_x', var_name='x2', axis=ax[0])
-
-    # Plot the set motor positions (phi_m_1_set, phi_m_2_set) on the second axis:
-    g.add_line(var_type='_u', var_name='tau', axis=ax[1])
-
-
-ax[0].set_ylabel('angle position [rad]')
-ax[1].set_ylabel('torque [N*m]')
-ax[1].set_xlabel('time [s]')
-x1_result = []
-x2_result = []
-from calc_transition import calc_trans
-phibound = [1,1]
-## natural responce of system (needs collision events to be added in sys dynamics)
-u0 = np.zeros((1,1))
-"""for i in range(num_steps):
-    x0 = simulator.make_step(u0)
-    print(i+1)
-    #print(x0)
-    curx1 = x0[0]
-    curx2 = x0[1]
-    curx3 = x0[2]
-    curx4 = x0[3]
-    phibound[0] = phibound[1]
-    phibound[1] = curx1 + curx2
-    if (((phibound[0] > -0.1) and (phibound[1] < -0.1)) or ((phibound[0] <-0.1) and (phibound[1] > -0.1))) and curx1>0:
-        print('TRANSITION')
-        newstates = calc_trans(curx1, curx2, curx3, curx4, m=m, mh=mh, a=a, b=b)
-        x0 = np.array([newstates[0], newstates[1], newstates[2], newstates[3]]).reshape(-1,1)
-        simulator.x0 = x0
-    #if (i+1) % 10 == 0:
-    x1_result = np.concatenate((x1_result, curx1))
-    x2_result = np.concatenate((x2_result, curx2))
-
-sim_graphics.plot_results()
-# Reset the limits on all axes in graphic to show the data.
-sim_graphics.reset_axes()
-# Show the figure:
-fig.savefig('fig_runsimulator.png')
-
-from animate import animate_compass
-animate_compass(x1_result, x2_result, a, b, phi, iter=1, saveFig=True, gif_fps=20,name='twoleg_compass.gif')
-
-# run optimizer
-u0 = mpc.make_step(x0)
-sim_graphics.clear()
-mpc_graphics.plot_predictions()
-mpc_graphics.reset_axes()
-# Show the figure:
-#fig.savefig('fig_runopt.png')"""
-
-## IMPROVE GRAPH
-# Change the color for the states:
-for line_i in mpc_graphics.pred_lines['_x', 'x1']: line_i.set_color('#1f77b4') # blue
-for line_i in mpc_graphics.pred_lines['_x', 'x2']: line_i.set_color('#ff7f0e') # orange
-# Change the color for the input:
-for line_i in mpc_graphics.pred_lines['_u', 'tau']: line_i.set_color('#1f77b4')
-
-# Make all predictions transparent:
-for line_i in mpc_graphics.pred_lines.full: line_i.set_alpha(0.2)
-
-# Get line objects (note sum of lists creates a concatenated list)
-lines = sim_graphics.result_lines['_x', 'x1']+sim_graphics.result_lines['_x', 'x2']
-ax[0].legend(lines,'12',title='state')
-# also set legend for second subplot:
-lines = sim_graphics.result_lines['_u', 'tau']
-ax[1].legend(lines,'1',title='tau')
-
-
-# finish running control loop
-simulator.reset_history()
-simulator.x0 = x0
-mpc.reset_history()
 
 # delete all previous results so the animation works
 import os 
@@ -257,11 +156,27 @@ curx2 = mpc.x0['x2',0]
 curx3 = mpc.x0['dx1',0]
 curx4 = mpc.x0['dx2',0]
 numiter = 1
+
+x1arr = []
+x2arr = []
+tarr = []
+farr = []
+x3arr = []
+x4arr = []
 for i in range(num_steps-1):
     curx1 = mpc.x0['x1',0]
     curx2 = mpc.x0['x2',0]
     curx3 = mpc.x0['dx1',0]
     curx4 = mpc.x0['dx2',0]
+    cur_t = i*delta_t
+    curf = mpc.u0['tau',0]
+    #if i % 10 == 0:
+    x1arr.append(float(curx1))
+    x2arr.append(float(curx2))
+    x3arr.append(float(curx3))
+    x4arr.append(float(curx4))
+    tarr.append(cur_t)
+    farr.append(float(curf))
     phibound[0] = phibound[1]
     phibound[1] = curx1 + curx2
     #print('x1: ',curx1)
@@ -282,36 +197,36 @@ for i in range(num_steps-1):
     u0 = mpc.make_step(x0)
     x0 = simulator.make_step(u0)
     
-twoleg_dir = './research_template/twoleg_graphs/'
-# Plot predictions from t=0
-mpc_graphics.plot_predictions(t_ind=0)
-# Plot results until current time
-sim_graphics.plot_results()
-sim_graphics.reset_axes()
-fig.savefig(twoleg_dir + 'twoleg_mainloop.png')
+twoleg_dir = '/home/max/workspace/paper_mpc_mujoco/vis/twoleg_graphs'
 
-## SAVE RESULTS
-from do_mpc.data import save_results, load_results
-save_results([mpc, simulator])
-results = load_results('./results/results.pkl')
+import matplotlib.pyplot as plt
 
-x = results['mpc']['_x']
-#print(x)
-x1_result = x[:,0]
-x2_result = x[:,1]
-x3_result = x[:,2]
-x4_result = x[:,3]
+fig, (ax1, ax2, ax3) = plt.subplots(3)
+fig.suptitle('States and Controls Over Entire Range')
+fig.tight_layout()
+
+# position states
+ax1.plot(tarr, x1arr,label='1')
+ax1.plot(tarr, x2arr,label='2')
+
+ax2.plot(tarr, x3arr,label='1')
+ax2.plot(tarr, x4arr,label='2')
+
+ax3.plot(tarr, farr)
+
+ax1.legend()
+ax2.legend()
+
+
+ax1.set_ylabel('state')
+ax2.set_ylabel('state velocity')
+ax3.set_ylabel('tau')
+
+
+plt.savefig('twoleg_states', bbox_inches='tight')
+
 
 # animate motion of the compass gait
 from animate import animate_compass
-animate_compass(x1_result, x2_result, a, b, phi, iter=1, saveFig=True, gif_fps=20,name=twoleg_dir + 'twoleg_compass.gif')
+animate_compass(x1arr, x2arr, a, b, phi, iter=1, saveFig=True, gif_fps=20,name=twoleg_dir + 'twoleg_compass.gif')
 
-# animate the plot window to show real time predictions and trajectory
-from matplotlib.animation import FuncAnimation, FFMpegWriter, ImageMagickWriter
-from matplotlib import animation
-def update(t_ind):
-    sim_graphics.plot_results(t_ind)
-    mpc_graphics.plot_predictions(t_ind)
-    mpc_graphics.reset_axes()
-anim = FuncAnimation(fig, update, frames=num_steps, repeat=False)
-anim.save(twoleg_dir + 'twoleg_statesanim.gif', writer=animation.PillowWriter(fps=15))
