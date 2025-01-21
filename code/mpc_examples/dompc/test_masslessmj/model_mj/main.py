@@ -7,8 +7,9 @@ import os
 rel_do_mpc_path = os.path.join('..','..')
 sys.path.append(rel_do_mpc_path)
 
-
 import do_mpc
+
+from controller_dyn import control
 
 # import mujoco interface
 from mj_interface import mjmod_init, mjrend_init, linearize, setpolelen
@@ -24,16 +25,22 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
 
     #### stuff for equations comparison
     import do_mpc
-    from model import model_set
+    from model_dynamics import model_setdynamics
 
-    model_dyn = model_set(M,m,polelen)
+    model_dyn = model_setdynamics(M,m,polelen)
 
-    simulator = do_mpc.simulator.Simulator(model_dyn)
-    simulator.set_param(t_step = delta_t)
-    simulator.setup()
+    mpc = control(model_dyn, delta_t)
+
+    sim_dyn = do_mpc.simulator.Simulator(model_dyn)
+    sim_dyn.set_param(t_step = delta_t)
+    sim_dyn.setup()
+
 
     x0_dyn = np.array([0, 0, 0, 0])
-    simulator.x0 = x0_dyn
+    sim_dyn.x0 = x0_dyn
+    mpc.x0 = x0_dyn
+
+    mpc.set_initial_guess()
 
     ####
 
@@ -47,6 +54,8 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
     # set pole length and update mass/intertia
     setpolelen(model, data, polelen)
 
+    print(model.geom_pos)
+
     # init window
     window, camera, scene, context, viewport = mjrend_init(model, data)
     
@@ -59,6 +68,9 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
 
     xdyn = []
     thetadyn = []
+
+    linx = []
+    lintheta = []
 
     # start main loop
     x = np.zeros(4)
@@ -110,7 +122,9 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
         x[2] = data.qvel[0]
         x[3] = data.qvel[1]
 
-        u = 8
+        u = mpc.make_step(x0_dyn)
+        x0_dyn = sim_dyn.make_step(u)
+
         data.ctrl = u
         curf = u
         curt = delta_t*step
@@ -121,7 +135,7 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
         # step dynamic model
         u_dyn = np.ones((1,1))
         u_dyn[0,0] = u
-        x_dyn = simulator.make_step(u_dyn)
+        x_dyn = sim_dyn.make_step(u_dyn)
         #print(simulator.x0)
 
         xdyn = np.append(xdyn, x_dyn[0])
@@ -139,6 +153,7 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
         thetaarr = np.append(thetaarr, curtheta)
         farr = np.append(farr, curf)
         tarr = np.append(tarr, curt)
+
         step += 1
         # render frames
 
@@ -185,9 +200,9 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
 
         # make animation
         from animate_cartpole import animate_cartpole
-        #animate_cartpole(xarr, thetaarr, farr, gif_fps=20, l=polelen, save_gif=True, name='mujoco_sim.gif')
+        animate_cartpole(xarr, thetaarr, farr, gif_fps=20, l=polelen, save_gif=True, name='mujoco_sim.gif')
 
-        #animate_cartpole(xdyn, thetadyn, farr, gif_fps=20, l=polelen, save_gif=True, name='dynamics_sim.gif')
+        animate_cartpole(xdyn, thetadyn, farr, gif_fps=20, l=polelen, save_gif=True, name='dynamics_sim.gif')
 
 
 if __name__ == "__main__":

@@ -13,8 +13,8 @@ from model import model_set
 from controller import control
 
 m = 5
-M = 10.5
-L = 0.3
+M = 10
+L = 0.5
 
 num_steps = 400
 

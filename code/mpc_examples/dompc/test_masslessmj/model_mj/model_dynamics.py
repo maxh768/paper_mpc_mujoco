@@ -10,7 +10,7 @@ sys.path.append(rel_do_mpc_path)
 # Import do_mpc package:
 import do_mpc
 
-def model_set(M,m,L):
+def model_setdynamics(M,m,L):
     g = 9.81
     model_type = 'continuous' # either 'discrete' or 'continuous'
     model = do_mpc.model.Model(model_type)
@@ -20,6 +20,10 @@ def model_set(M,m,L):
     theta = model.set_variable(var_type='_x', var_name='theta', shape=(1,1))
     dtheta = model.set_variable(var_type='_x', var_name='dtheta', shape=(1,1))
     u = model.set_variable(var_type='_u', var_name='u', shape=(1,1))
+
+    
+    #outputs['x_dotdot'] = (-mp * lpole * g * sint * cost - lpole * (f + mp * lpole * omega**2 * sint)) / det
+    #outputs['theta_dotdot'] = ((mc + mp) * g * sint + cost * (f + mp * lpole * omega**2 * sint)) / det
 
     det = m * L * np.cos(theta)**2 - L * (M + m)
 
