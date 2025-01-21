@@ -13,7 +13,7 @@ from OpenGL.GLUT import *
 # initialize the model
 def mjmod_init(x0):
 
-    path2xml = '/home/max/workspace/paper_mpc_mujoco/code/mpc_examples/dompc/cartpole_mujoco/inverted_pendulum.xml'
+    path2xml = '/home/max/workspace/paper_mpc_mujoco/code/mpc_examples/dompc/test_masslessmj/model_mj/inverted_pendulum.xml'
     model = mujoco.MjModel.from_xml_path(path2xml)
     data = mujoco.MjData(model)
 
@@ -133,8 +133,9 @@ def linearize(model, data):
     return A,B
 
 def setpolelen(model, data, leng=0.6):
-    model.geom_size[2,1] = leng
+    model.geom_size[2,1] = leng # pole capsule
     model.geom_pos[2,2] = leng
-    model.body_ipos[2,2] = leng
+
+    model.geom_pos[3,2] = leng*2 # pole capsule
 
 

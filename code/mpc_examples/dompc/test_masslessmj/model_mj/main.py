@@ -7,12 +7,8 @@ import os
 rel_do_mpc_path = os.path.join('..','..')
 sys.path.append(rel_do_mpc_path)
 
-# Import do_mpc package:
-import do_mpc
 
-# import model and controller
-from model import model_set
-from controller import control
+import do_mpc
 
 # import mujoco interface
 from mj_interface import mjmod_init, mjrend_init, linearize, setpolelen
@@ -24,20 +20,32 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 
 # make function to do co design using finite difference
-def balance(delta_t = 0.02, plotting = False, polelen = 0.3, kg_m_pole = 16.687):
+def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
+
+    #### stuff for equations comparison
+    import do_mpc
+    from model import model_set
+
+    model_dyn = model_set(M,m,polelen)
+
+    simulator = do_mpc.simulator.Simulator(model_dyn)
+    simulator.set_param(t_step = delta_t)
+    simulator.setup()
+
+    x0_dyn = np.array([0, 0, 0, 0])
+    simulator.x0 = x0_dyn
+
+    ####
 
     # set initial conditions
     x0 = [0, np.deg2rad(180)]
     model, data = mjmod_init(x0)
- 
+
+    model.body_mass[1] = M
+    model.body_mass[2] = m
+
     # set pole length and update mass/intertia
-    model.body_mass[2] = polelen*kg_m_pole
-    print(model.body_mass)
-    model.body_inertia[1,2] = (1/12)*polelen*kg_m_pole*(polelen**2)
-    #model.body_mass[1] = 9
-
     setpolelen(model, data, polelen)
-
 
     # init window
     window, camera, scene, context, viewport = mjrend_init(model, data)
@@ -48,10 +56,9 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.3, kg_m_pole = 16.687)
     farr = []
     #jarr = []
     tarr = []
-    yarr = []
-    the_dmpc = []
 
-    cost = 0 # initialize cost 
+    xdyn = []
+    thetadyn = []
 
     # start main loop
     x = np.zeros(4)
@@ -97,52 +104,30 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.3, kg_m_pole = 16.687)
         # mj step 1: pre control
         mujoco.mj_step1(model, data)
 
-        # get linearized system
-        A, B = linearize(model, data)
-        #print(A)
-        #print(B)
-        # model and controller
-        dmpc_mod = model_set(A, B)
-        mpc = control(dmpc_mod, delta_t)
-
-        # estimator and simulator (need to replace with mujoco)
-        estimator = do_mpc.estimator.StateFeedback(dmpc_mod)
-        simulator = do_mpc.simulator.Simulator(dmpc_mod)
-        simulator.set_param(t_step = delta_t)
-        simulator.setup()
-
         # get current state
         x[0] = data.qpos[0]
         x[1] = data.qpos[1]
         x[2] = data.qvel[0]
         x[3] = data.qvel[1]
 
-        # Initial state
-        mpc.x0 = x
-        simulator.x0 = x
-        estimator.x0 = x
-
-        # Use initial state to set the initial guess.
-        mpc.set_initial_guess()
-
-        # get control
-        u = mpc.make_step(x)
-        y_next = simulator.make_step(u)
-        cury = y_next[0]
-        curthe_dmpc = y_next[1]
-
-        cost += u**2
-
-
+        u = 8
         data.ctrl = u
         curf = u
         curt = delta_t*step
 
-
         # mj step2: run with ctrl input
         mujoco.mj_step2(model, data)
 
+        # step dynamic model
+        u_dyn = np.ones((1,1))
+        u_dyn[0,0] = u
+        x_dyn = simulator.make_step(u_dyn)
+        #print(simulator.x0)
 
+        xdyn = np.append(xdyn, x_dyn[0])
+        thetadyn = np.append(thetadyn, x_dyn[2])
+
+        
         curx = data.qpos[0]
         curtheta = data.qpos[1]
         curdx = data.qvel[0]
@@ -154,9 +139,6 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.3, kg_m_pole = 16.687)
         thetaarr = np.append(thetaarr, curtheta)
         farr = np.append(farr, curf)
         tarr = np.append(tarr, curt)
-        yarr = np.append(yarr, cury)
-        the_dmpc = np.append(the_dmpc, curthe_dmpc)
-
         step += 1
         # render frames
 
@@ -171,21 +153,42 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.3, kg_m_pole = 16.687)
 
     # close window
     glfw.terminate()
-    print(float(cost))
     if plotting:
         video_writer.release()
 
         # plot timeseries
-        from plot_results import pl_ts
-        pl_ts(xarr, tarr, thetaarr, the_dmpc, yarr, farr,name='cartpole_mjpc_times')
+        import matplotlib.pyplot as plt
+        thetaarr = np.pi - thetaarr
+
+        fig, (ax1, ax2, ax3) = plt.subplots(3)
+        fig.suptitle('States and Controls Over Entire Range')
+        fig.tight_layout()
+
+        # position states
+        ax1.plot(tarr, xarr, label='MuJoCo')
+        ax1.plot(tarr, xdyn, label='Dynamics')
+        
+        ax2.plot(tarr, thetaarr, label='MuJoCo')
+        ax2.plot(tarr, thetadyn, label='Dynamics')
+
+        ax3.plot(tarr, farr)
+        ax1.legend()
+        ax2.legend()
+
+        ax1.set_ylabel('X')
+        ax2.set_ylabel('Theta')
+        ax3.set_ylabel('F')
+
+        ax3.set_xlabel('Time')
+        plt.savefig('timeseris_comp', bbox_inches='tight')
+
 
         # make animation
-        thetaarr = thetaarr - np.pi
         from animate_cartpole import animate_cartpole
-        animate_cartpole(xarr, thetaarr, farr, gif_fps=20, l=1, save_gif=True, name='cartpole_mjpc.gif')
-    tf = tarr[-1]
-    return float(cost), tf, Fail
+        #animate_cartpole(xarr, thetaarr, farr, gif_fps=20, l=polelen, save_gif=True, name='mujoco_sim.gif')
+
+        #animate_cartpole(xdyn, thetadyn, farr, gif_fps=20, l=polelen, save_gif=True, name='dynamics_sim.gif')
 
 
 if __name__ == "__main__":
-    balance(polelen = 0.3,plotting=True)
+    balance(plotting=True)

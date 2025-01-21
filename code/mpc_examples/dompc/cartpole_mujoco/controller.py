@@ -14,7 +14,7 @@ def control (model, delta_t):
     mpc = do_mpc.controller.MPC(model)
 
     setup_mpc = {
-        'n_horizon': 400,
+        'n_horizon': 200,
         'n_robust': 0,
         'open_loop': 0,
         't_step': delta_t,
