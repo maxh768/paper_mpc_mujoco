@@ -31,17 +31,21 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
 
     mpc = control(model_dyn, delta_t)
 
+    est_dyn = do_mpc.estimator.StateFeedback(model_dyn)
     sim_dyn = do_mpc.simulator.Simulator(model_dyn)
     sim_dyn.set_param(t_step = delta_t)
     sim_dyn.setup()
 
 
     x0_dyn = np.array([0, 0, 0, 0])
-    sim_dyn.x0 = x0_dyn
+
     mpc.x0 = x0_dyn
+    sim_dyn.x0 = x0_dyn
+    est_dyn.x0 = x0_dyn
+    
 
     mpc.set_initial_guess()
-
+    u = 0
     ####
 
     # set initial conditions
@@ -124,22 +128,18 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
 
         u = mpc.make_step(x0_dyn)
         x0_dyn = sim_dyn.make_step(u)
+        print(step)
 
         data.ctrl = u
+        print(data.ctrl)
         curf = u
         curt = delta_t*step
 
         # mj step2: run with ctrl input
         mujoco.mj_step2(model, data)
 
-        # step dynamic model
-        u_dyn = np.ones((1,1))
-        u_dyn[0,0] = u
-        x_dyn = sim_dyn.make_step(u_dyn)
-        #print(simulator.x0)
-
-        xdyn = np.append(xdyn, x_dyn[0])
-        thetadyn = np.append(thetadyn, x_dyn[2])
+        xdyn = np.append(xdyn, x0_dyn[0])
+        thetadyn = np.append(thetadyn, x0_dyn[2])
 
         
         curx = data.qpos[0]

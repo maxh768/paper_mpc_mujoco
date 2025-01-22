@@ -18,7 +18,7 @@ L = 0.5
 
 num_steps = 400
 
-delta_t = .04
+delta_t = .02
 model = model_set(M,m,L)
 mpc = control(model, delta_t)
 
@@ -47,6 +47,7 @@ for i in range(num_steps):
     u0 = mpc.make_step(x0)
     x0 = simulator.make_step(u0)
     print(i)
+    print(mpc.x0)
 
     curx = float(x0[0])
     curtheta = float(x0[2])
