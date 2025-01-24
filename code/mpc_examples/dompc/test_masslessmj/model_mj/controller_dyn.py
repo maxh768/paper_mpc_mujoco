@@ -53,10 +53,10 @@ def control (model, delta_t):
     mpc.bounds['upper','_x','dtheta'] = max_x[3]
 
     # lower bounds of the input
-    mpc.bounds['lower','_u','u'] = -100
+    mpc.bounds['lower','_u','u'] = -300
 
     # upper bounds of the input
-    mpc.bounds['upper','_u','u'] =  100
+    mpc.bounds['upper','_u','u'] =  300
 
     mpc.setup()
 

@@ -21,7 +21,7 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 
 # make function to do co design using finite difference
-def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
+def balance(delta_t = 0.02, plotting = False, polelen = 0.6, M = 10, m = 5):
 
     #### stuff for equations comparison
     import do_mpc
@@ -49,16 +49,20 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
     ####
 
     # set initial conditions
-    x0 = [0, np.deg2rad(180)]
+    x0 = [0, np.pi]
     model, data = mjmod_init(x0)
 
-    model.body_mass[1] = M
-    model.body_mass[2] = m
+    ##model.body_mass[1] = M
+    #model.body_mass[2] = m
+
+    
 
     # set pole length and update mass/intertia
-    setpolelen(model, data, polelen)
+    #setpolelen(model, data, polelen)
+    #print(model.body_mass)
+    #print(model.body_ipos)
+    #print(model.body_inertia)
 
-    print(model.geom_pos)
 
     # init window
     window, camera, scene, context, viewport = mjrend_init(model, data)
@@ -66,15 +70,17 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
     # set matrices for plotting
     xarr = []
     thetaarr = []
+    dxarr = []
+    dthetaarr = []
     farr = []
     #jarr = []
     tarr = []
 
     xdyn = []
     thetadyn = []
+    dxdyn = []
+    dthetadyn = []
 
-    linx = []
-    lintheta = []
 
     # start main loop
     x = np.zeros(4)
@@ -117,40 +123,31 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
             image = np.flipud(image)
             video_writer.write(image)
 
-        # mj step 1: pre control
-        mujoco.mj_step1(model, data)
-
-        # get current state
-        x[0] = data.qpos[0]
-        x[1] = data.qpos[1]
-        x[2] = data.qvel[0]
-        x[3] = data.qvel[1]
-
         u = mpc.make_step(x0_dyn)
         x0_dyn = sim_dyn.make_step(u)
-        print(step)
 
         data.ctrl = u
-        print(data.ctrl)
         curf = u
         curt = delta_t*step
 
-        # mj step2: run with ctrl input
-        mujoco.mj_step2(model, data)
+        mujoco.mj_step(model, data)
 
         xdyn = np.append(xdyn, x0_dyn[0])
         thetadyn = np.append(thetadyn, x0_dyn[2])
+        dxdyn.append(x0_dyn[1])
+        dthetadyn.append(x0_dyn[3])
 
         
         curx = data.qpos[0]
         curtheta = data.qpos[1]
         curdx = data.qvel[0]
         curdtheta = data.qvel[1]
-        #print(curx, curtheta, curdx, curdtheta)
 
         # append arrays
         xarr = np.append(xarr, curx)
         thetaarr = np.append(thetaarr, curtheta)
+        dxarr = np.append(dxarr, curdx)
+        dthetaarr = np.append(dthetaarr, curdtheta)
         farr = np.append(farr, curf)
         tarr = np.append(tarr, curt)
 
@@ -175,7 +172,7 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
         import matplotlib.pyplot as plt
         thetaarr = np.pi - thetaarr
 
-        fig, (ax1, ax2, ax3) = plt.subplots(3)
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4)
         fig.suptitle('States and Controls Over Entire Range')
         fig.tight_layout()
 
@@ -186,13 +183,22 @@ def balance(delta_t = 0.02, plotting = False, polelen = 0.5, M = 10, m = 5):
         ax2.plot(tarr, thetaarr, label='MuJoCo')
         ax2.plot(tarr, thetadyn, label='Dynamics')
 
-        ax3.plot(tarr, farr)
+        ax3.plot(tarr, dxarr, label='MuJoCo')
+        ax3.plot(tarr, dxdyn, label='Dynamics')
+
+        ax4.plot(tarr, -dthetaarr, label='MuJoCo')
+        ax4.plot(tarr, dthetadyn, label='Dynamics')
+
         ax1.legend()
         ax2.legend()
+        ax3.legend()
+        ax4.legend()
 
         ax1.set_ylabel('X')
         ax2.set_ylabel('Theta')
-        ax3.set_ylabel('F')
+        ax3.set_ylabel('DX')
+        ax4.set_ylabel('DTheta')
+
 
         ax3.set_xlabel('Time')
         plt.savefig('timeseris_comp', bbox_inches='tight')

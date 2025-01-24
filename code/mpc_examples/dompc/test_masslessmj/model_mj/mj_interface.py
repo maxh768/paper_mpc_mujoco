@@ -22,6 +22,7 @@ def mjmod_init(x0):
     data.qpos = np.array([x0[0], x0[1]])
     mujoco.mj_forward(model, data)
 
+
     return model, data
 
 # init window to render
