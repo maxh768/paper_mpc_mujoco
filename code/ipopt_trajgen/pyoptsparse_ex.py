@@ -3,17 +3,20 @@ from pyoptsparse import IPOPT, Optimization
 import numpy as np
 
 # MPC and system parameters (cartpole)
-dt = 0.01
-N = 10 # horizon
+dt = 0.5
+N = 7 # horizon
 ns = 4 # number of states
 nu = 1 # number of controls
 Q = np.eye(ns) # weighting matrix for states
 R = np.eye(nu) # weighting matrix for controls
+R[0,0] = 1e-4
 Qf = Q # terminal weighting matrix for states
 #Rf = R not sure if this is needed (check later)
-s0 = np.array([0, np.pi, 0, 0]) # initial state
+s0 = np.array([2, -2, 1, 3]) # initial state
 
 # using s for state vector to not confuse with coordinate x
+"""
+cart pole dynamics and discretization nonlinear, using linear system for now
 def dynamics(t,s,u):
     # representation of dynamics: ds = f(s,u)
     # s: {x, theta, dx, dtheta}
@@ -57,17 +60,44 @@ def test_discretization():
     # tests discretization function to see if result is realistic
     x = []
     theta = []
-    s0 = np.array([0, np.pi, 0, 0])
+    s0 = np.array([0, 0, 0, 0])
     s = s0
     x.append(s[0])
     theta.append(s[1])
     for i in range(200):
         s = discretize(s,50,0,dt)
-        print(s)
+        #print(s)
         x.append(s[0])
         theta.append(s[1])
     from animate_cartpole import animate_cartpole
     animate_cartpole(x, theta, np.ones(201), save_gif=True)
+"""
+
+def discretize(s,u,t,dt):
+    # model of two osciliating masses (discrete linear model from dompc)
+    # dt = 0.5
+    # s = {x1, v1, x2, v2}
+    # u = {f}
+    # s[n+1] = A*s[n] + B*u[n]
+    A = np.array([[ 0.763,  0.460,  0.115,  0.020],
+              [-0.899,  0.763,  0.420,  0.115],
+              [ 0.115,  0.020,  0.763,  0.460],
+              [ 0.420,  0.115, -0.899,  0.763]])
+
+    B = np.array([[0.014],
+                [0.063],
+                [0.221],
+                [0.367]])
+    
+    s = np.array([[s[0]],
+                [s[1]],
+                [s[2]],
+                [s[3]]])
+    
+    u = np.array([[u]])
+
+    snext = A@s + B@u
+    return np.transpose(snext)
 
 
 # rst begin objfunc
@@ -78,29 +108,29 @@ def objfunc(vars):
 
 
     funcs = {}
-    print(s)
-    print(np.size(s))
 
-    # need to fix bug:
-    # need to change code to use vector instead of matrix for s as that is how it is represented in pyoptsparse (unless this can be changed)
     
-    terminal = np.transpose(s[N,1]).dot(Qf).dot(s[N,1]) # terminal cost
+    terminal = np.transpose(s[N-4:N]).dot(Qf).dot(s[N-4:N])
     # initialize cost
     funcs["obj"] = terminal
     
     # constraint 1: initial condition
-    con_1 = s[0,:] - s0
+    con_1 = s[0:4] - s0
+    
 
     # constraint 2: dynamics
-    con_2 = np.zeros((N-1,ns))
+    con_2 = np.zeros(ns*(N-1))
 
     # sum cost from n = 0 to N-1
     for i in range(N-1):
         # sum cost
-        funcs["obj"] += np.transpose(s[i,:]).dot(Q).dot(s[i,:]) + np.transpose(u[i]).dot(R).dot(u[i])
+        funcs["obj"] += np.transpose(s[i:i+4]).dot(Q).dot(s[i:i+4]) + np.transpose(u[i])*R*u[i]
 
         # fill in second constraint
-        con_2[i,:] = s[i+1,:] - discretize(s[i,:],u[i],i*dt,dt)
+        index1 = (i+1)*ns
+        index2 = index1 + 4
+        con_2[i:i+4] = s[index1:index2] - discretize(s[i:i+4],u[i],i*dt,dt)
+        
 
     funcs["con_ic"] = con_1
     funcs["con_dyn"] = con_2
@@ -141,3 +171,28 @@ sol = opt(optProb, sens="FD")
 # rst begin check
 # Check Solution
 #print(sol)
+
+x = np.zeros(N)
+theta = np.zeros(N)
+dx = np.zeros(N)
+dtheta = np.zeros(N)
+
+for i in range(N):
+    cx1 = sol.xStar['s'][i*ns]
+    x[i] = cx1
+
+    cx2 = sol.xStar['s'][i*ns+ 1]
+    theta[i] = cx2
+
+    cx3 = sol.xStar['s'][i*ns + 2]
+    dx[i] = cx3
+
+    cx4 = sol.xStar['s'][i*ns + 3]
+    dtheta[i] = cx4
+
+u = sol.xStar['u']
+t = np.linspace(0, N*dt, N)
+# plot results
+from plot_results import pl_ts
+pl_ts(x,theta,dx,dtheta,t,u)
+
